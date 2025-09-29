@@ -3,13 +3,16 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vercel dev"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0",
     "graphql": "^16.11.0",
+    "graphql-type-json": "^0.3.2",
     "graphql-yoga": "^5.16.0"
   },
   "devDependencies": {
