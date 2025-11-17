@@ -406,45 +406,25 @@ const resolvers = {
             { merge: true }
           );
         } else {
-          // Normal draw: draw one card, keep turn ONLY if drawn card is playable
+          // Normal draw: draw one card, keep turn so player can manually end it
           if (!drawPile.length) throw new Error("No cards to draw");
           const drawnCard = drawPile.pop()!;
           myHand.push(drawnCard);
 
-          const top: Card = room.topCard as Card;
-          const drawnIsPlayable = matches(top, drawnCard);
-
           tx.set(myHandRef, { cards: myHand }, { merge: true });
           tx.set(db.doc(`rooms/${roomId}/players/${uid}`), { handCount: myHand.length }, { merge: true });
 
-          if (drawnIsPlayable) {
-            // Drawn card is playable - keep turn so player can play it
-            tx.set(
-              roomRef,
-              {
-                drawPile,
-                chainValue: null,
-                chainPlayer: null,
-                drawnCardPlayable: true, // Flag for client
-                updatedAt: FieldValue.serverTimestamp()
-              },
-              { merge: true }
-            );
-          } else {
-            // Drawn card not playable - auto-pass turn
-            tx.set(
-              roomRef,
-              {
-                drawPile,
-                currentTurn: nextUid,
-                chainValue: null,
-                chainPlayer: null,
-                drawnCardPlayable: false,
-                updatedAt: FieldValue.serverTimestamp()
-              },
-              { merge: true }
-            );
-          }
+          // Always keep turn - player must manually end turn
+          tx.set(
+            roomRef,
+            {
+              drawPile,
+              chainValue: null,
+              chainPlayer: null,
+              updatedAt: FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
         }
       });
 
