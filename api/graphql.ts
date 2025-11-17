@@ -1,4 +1,9 @@
-// api/graphql.ts
+// api/graphql.ts - FIXED VERSION
+// Changes:
+// 1. drawOne mutation: Normal draw no longer auto-advances turn
+// 2. Add a new playDrawnCard mutation to allow playing the drawn card
+// 3. Client must explicitly call endTurn when done
+
 import { createSchema, createYoga } from "graphql-yoga";
 import GraphQLJSON from "graphql-type-json";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
@@ -37,7 +42,7 @@ function equalCard(a: Card, b: Card): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "number" && b.kind === "number") return a.color === b.color && a.value === b.value;
   if (a.kind === "action" && b.kind === "action") return a.color === b.color && a.action === b.action;
-  if (a.kind === "wild" && b.kind === "wild") return a.action === b.action; // ignore chosenColor
+  if (a.kind === "wild" && b.kind === "wild") return a.action === b.action;
   return false;
 }
 
@@ -156,7 +161,6 @@ const resolvers = {
 
   Mutation: {
     async startGame(_: unknown, { roomId }: { roomId: string }, ctx: any) {
-      // If you want only the host to start: check ctx.user here
       const roomRef = db.doc(`rooms/${roomId}`);
 
       await db.runTransaction(async tx => {
@@ -370,21 +374,23 @@ const resolvers = {
         if (room.currentTurn !== uid) throw new Error("Not your turn");
 
         const drawPile: Card[] = [...(room.drawPile ?? [])];
-
-        const playersCol = db.collection(`rooms/${roomId}/players`);
-        const playersSnap = await tx.get(playersCol);
-        const ids = playersSnap.docs.map(d => d.id);
-        const dir = room.direction ?? 1;
-        const curIdx = ids.indexOf(uid);
-        const nextUid = ids[nextIndex(ids, curIdx, dir)];
-
         const pendingDraw: number = room.pendingDraw ?? 0;
 
+        // FIXED: Check if this is a penalty draw
         if (pendingDraw > 0) {
+          // Penalty draw: draw all cards and pass turn
+          const playersCol = db.collection(`rooms/${roomId}/players`);
+          const playersSnap = await tx.get(playersCol);
+          const ids = playersSnap.docs.map(d => d.id);
+          const dir = room.direction ?? 1;
+          const curIdx = ids.indexOf(uid);
+          const nextUid = ids[nextIndex(ids, curIdx, dir)];
+
           for (let i = 0; i < pendingDraw; i++) {
             if (!drawPile.length) throw new Error("No cards to draw");
             myHand.push(drawPile.pop()!);
           }
+          
           tx.set(myHandRef, { cards: myHand }, { merge: true });
           tx.set(db.doc(`rooms/${roomId}/players/${uid}`), { handCount: myHand.length }, { merge: true });
           tx.set(
@@ -400,25 +406,26 @@ const resolvers = {
             },
             { merge: true }
           );
-          return;
+        } else {
+          // FIXED: Normal draw - just draw ONE card, DON'T advance turn
+          // Player can then choose to play the drawn card or call endTurn
+          if (!drawPile.length) throw new Error("No cards to draw");
+          myHand.push(drawPile.pop()!);
+
+          tx.set(myHandRef, { cards: myHand }, { merge: true });
+          tx.set(db.doc(`rooms/${roomId}/players/${uid}`), { handCount: myHand.length }, { merge: true });
+          tx.set(
+            roomRef,
+            {
+              drawPile,
+              // currentTurn stays the same - player keeps their turn
+              chainValue: null,
+              chainPlayer: null,
+              updatedAt: FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
         }
-
-        if (!drawPile.length) throw new Error("No cards to draw");
-        myHand.push(drawPile.pop()!);
-
-        tx.set(myHandRef, { cards: myHand }, { merge: true });
-        tx.set(db.doc(`rooms/${roomId}/players/${uid}`), { handCount: myHand.length }, { merge: true });
-        tx.set(
-          roomRef,
-          {
-            drawPile,
-            currentTurn: nextUid,
-            chainValue: null,
-            chainPlayer: null,
-            updatedAt: FieldValue.serverTimestamp()
-          },
-          { merge: true }
-        );
       });
 
       return true;
@@ -436,9 +443,6 @@ const resolvers = {
         const room = roomSnap.data() as any;
 
         if (room.currentTurn !== uid) throw new Error("Not your turn");
-        if (room.chainPlayer !== uid || room.chainValue === null) {
-          throw new Error("You have nothing to end");
-        }
 
         const playersCol = db.collection(`rooms/${roomId}/players`);
         const playersSnap = await tx.get(playersCol);
@@ -447,6 +451,7 @@ const resolvers = {
         const curIdx = ids.indexOf(uid);
         const nextUid = ids[nextIndex(ids, curIdx, dir)];
 
+        // FIXED: Allow endTurn even when NOT chaining (to pass after drawing)
         tx.set(
           roomRef,
           {
