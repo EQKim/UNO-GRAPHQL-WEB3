@@ -376,16 +376,15 @@ const resolvers = {
         const drawPile: Card[] = [...(room.drawPile ?? [])];
         const pendingDraw: number = room.pendingDraw ?? 0;
 
-        // FIXED: Check if this is a penalty draw
+        const playersCol = db.collection(`rooms/${roomId}/players`);
+        const playersSnap = await tx.get(playersCol);
+        const ids = playersSnap.docs.map(d => d.id);
+        const dir = room.direction ?? 1;
+        const curIdx = ids.indexOf(uid);
+        const nextUid = ids[nextIndex(ids, curIdx, dir)];
+
         if (pendingDraw > 0) {
           // Penalty draw: draw all cards and pass turn
-          const playersCol = db.collection(`rooms/${roomId}/players`);
-          const playersSnap = await tx.get(playersCol);
-          const ids = playersSnap.docs.map(d => d.id);
-          const dir = room.direction ?? 1;
-          const curIdx = ids.indexOf(uid);
-          const nextUid = ids[nextIndex(ids, curIdx, dir)];
-
           for (let i = 0; i < pendingDraw; i++) {
             if (!drawPile.length) throw new Error("No cards to draw");
             myHand.push(drawPile.pop()!);
@@ -407,24 +406,45 @@ const resolvers = {
             { merge: true }
           );
         } else {
-          // FIXED: Normal draw - just draw ONE card, DON'T advance turn
-          // Player can then choose to play the drawn card or call endTurn
+          // Normal draw: draw one card, keep turn ONLY if drawn card is playable
           if (!drawPile.length) throw new Error("No cards to draw");
-          myHand.push(drawPile.pop()!);
+          const drawnCard = drawPile.pop()!;
+          myHand.push(drawnCard);
+
+          const top: Card = room.topCard as Card;
+          const drawnIsPlayable = matches(top, drawnCard);
 
           tx.set(myHandRef, { cards: myHand }, { merge: true });
           tx.set(db.doc(`rooms/${roomId}/players/${uid}`), { handCount: myHand.length }, { merge: true });
-          tx.set(
-            roomRef,
-            {
-              drawPile,
-              // currentTurn stays the same - player keeps their turn
-              chainValue: null,
-              chainPlayer: null,
-              updatedAt: FieldValue.serverTimestamp()
-            },
-            { merge: true }
-          );
+
+          if (drawnIsPlayable) {
+            // Drawn card is playable - keep turn so player can play it
+            tx.set(
+              roomRef,
+              {
+                drawPile,
+                chainValue: null,
+                chainPlayer: null,
+                drawnCardPlayable: true, // Flag for client
+                updatedAt: FieldValue.serverTimestamp()
+              },
+              { merge: true }
+            );
+          } else {
+            // Drawn card not playable - auto-pass turn
+            tx.set(
+              roomRef,
+              {
+                drawPile,
+                currentTurn: nextUid,
+                chainValue: null,
+                chainPlayer: null,
+                drawnCardPlayable: false,
+                updatedAt: FieldValue.serverTimestamp()
+              },
+              { merge: true }
+            );
+          }
         }
       });
 
