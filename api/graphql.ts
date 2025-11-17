@@ -305,10 +305,12 @@ const resolvers = {
           }
         } else {
           if (isActionSkip(card)) {
+            // Skip the next player (nIdx), give turn to player after them
             turnIdx = nextIndex(ids, nIdx, dir);
           } else if (isActionReverse(card)) {
             dir = -dir;
-            turnIdx = ids.length === 2 ? nextIndex(ids, nIdx, dir) : nextIndex(ids, curIdx, dir);
+            // With 2 players, reverse acts like skip (other player loses turn)
+            turnIdx = ids.length === 2 ? curIdx : nextIndex(ids, curIdx, dir);
           } else if (isActionDraw2(card)) {
             nextPendingDraw = 2;
             nextPendingType = "draw2";
