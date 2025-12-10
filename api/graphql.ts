@@ -475,15 +475,38 @@ const resolvers = {
 const yoga = createYoga({
   schema: createSchema({ typeDefs, resolvers }),
   context: async ({ request }) => {
+    console.log("=== GraphQL Request ===");
+    console.log("Method:", request.method);
+    console.log("URL:", request.url);
+    console.log("Origin:", request.headers.get("origin"));
+    
     const authHeader = request.headers.get("authorization");
+    console.log("Auth Header Present:", !!authHeader);
+    
     let user: { uid: string } | null = null;
     if (authHeader?.startsWith("Bearer ")) {
-      try { user = await getAuth().verifyIdToken(authHeader.slice(7)); } catch {}
+      try {
+        const token = authHeader.slice(7);
+        console.log("Verifying token (length:", token.length, ")");
+        user = await getAuth().verifyIdToken(token);
+        console.log("✅ Auth Success - UID:", user.uid);
+      } catch (err) {
+        console.error("❌ Auth Failed:", err instanceof Error ? err.message : err);
+      }
+    } else {
+      console.log("No Bearer token found");
     }
+    
     return { db, user };
   },
   graphqlEndpoint: "/api/graphql",
-  cors: false
+  cors: false,
+  logging: {
+    debug: console.debug,
+    info: console.info,
+    warn: console.warn,
+    error: console.error
+  }
 });
 
 export default yoga.fetch;
