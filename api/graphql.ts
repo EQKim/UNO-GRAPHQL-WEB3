@@ -596,8 +596,18 @@ const yoga = createYoga({
 
 // Vercel serverless handler
 export default async function handler(req: Request) {
-  console.log("🚀 Handler invoked - Method:", req.method, "URL:", req.url);
-  return yoga.fetch(req);
+  try {
+    console.log("🚀 Handler START - Method:", req.method, "URL:", req.url);
+    const response = await yoga.fetch(req);
+    console.log("✅ Handler SUCCESS - Status:", response.status);
+    return response;
+  } catch (err) {
+    console.error("💥 Handler CRASHED:", err);
+    return new Response(JSON.stringify({ error: "Internal server error", details: String(err) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
 
 export const config = { api: { bodyParser: false } };
