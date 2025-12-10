@@ -580,7 +580,12 @@ const yoga = createYoga({
     return { db, user };
   },
   graphqlEndpoint: "/api/graphql",
-  cors: false,
+  cors: {
+    origin: '*',
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['POST', 'GET', 'OPTIONS']
+  },
   logging: {
     debug: console.debug,
     info: console.info,
