@@ -485,9 +485,11 @@ const yoga = createYoga({
   graphqlEndpoint: "/api/graphql",
   cors: {
     origin: ["http://localhost:5173", "https://eqkim.github.io"],
-    credentials: false
-  }
+    credentials: true,
+    methods: ["POST", "GET", "OPTIONS"]
+  },
+  fetchAPI: { Response }
 });
 
-export default yoga;
+export default yoga.fetch;
 export const config = { api: { bodyParser: false } };
