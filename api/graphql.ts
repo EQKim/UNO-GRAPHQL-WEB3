@@ -11,12 +11,22 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 /* ----------------------------- Firebase Admin ----------------------------- */
+console.log("📦 Module loading - Firebase init starting...");
 if (!getApps().length) {
   const key = process.env.GCP_SERVICE_ACCOUNT_KEY;
+  console.log("🔑 GCP key present:", !!key);
   if (!key) throw new Error("Missing GCP_SERVICE_ACCOUNT_KEY");
-  initializeApp({ credential: cert(JSON.parse(key)) });
+  try {
+    initializeApp({ credential: cert(JSON.parse(key)) });
+    console.log("✅ Firebase initialized");
+  } catch (err) {
+    console.error("❌ Firebase init failed:", err);
+    throw err;
+  }
 }
 const db = getFirestore();
+console.log("✅ Firestore connected");
+
 
 /* --------------------------------- Types --------------------------------- */
 type Color = "red" | "yellow" | "green" | "blue";
