@@ -594,5 +594,10 @@ const yoga = createYoga({
   }
 });
 
-export default yoga.fetch;
+// Vercel serverless handler
+export default async function handler(req: Request) {
+  console.log("🚀 Handler invoked - Method:", req.method, "URL:", req.url);
+  return yoga.fetch(req);
+}
+
 export const config = { api: { bodyParser: false } };
