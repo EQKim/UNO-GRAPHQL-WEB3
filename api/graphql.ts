@@ -483,8 +483,7 @@ const yoga = createYoga({
     return { db, user };
   },
   graphqlEndpoint: "/api/graphql",
-  cors: false,
-  fetchAPI: { Response }
+  cors: false
 });
 
 export default yoga.fetch;
