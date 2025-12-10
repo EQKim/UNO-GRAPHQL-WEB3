@@ -149,32 +149,59 @@ const resolvers = {
   JSON: GraphQLJSON,
 
   Query: {
-    async room(_: unknown, { id }: { id: string }) {
-      const doc = await db.doc(`rooms/${id}`).get();
-      if (!doc.exists) return null;
-      const data = doc.data()!;
-      const playersSnap = await db.collection(`rooms/${id}/players`).get();
-      const players = playersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      return { id, ...data, drawPileCount: (data.drawPile || []).length, players };
+    async room(_: unknown, { id }: { id: string }, ctx: any) {
+      console.log("📖 Query: room - ID:", id, "User:", ctx.user?.uid || "anonymous");
+      try {
+        const doc = await db.doc(`rooms/${id}`).get();
+        if (!doc.exists) {
+          console.log("❌ Room not found:", id);
+          return null;
+        }
+        console.log("✅ Room found:", id);
+        const data = doc.data()!;
+        const playersSnap = await db.collection(`rooms/${id}/players`).get();
+        const players = playersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        console.log("✅ Room query successful - Players:", players.length);
+        return { id, ...data, drawPileCount: (data.drawPile || []).length, players };
+      } catch (err) {
+        console.error("❌ Query room failed:", err);
+        throw err;
+      }
     }
   },
 
   Mutation: {
     async startGame(_: unknown, { roomId }: { roomId: string }, ctx: any) {
+      console.log("🎮 Mutation: startGame - Room:", roomId, "User:", ctx.user?.uid || "anonymous");
+      
+      if (!ctx.user) {
+        console.error("❌ startGame: No authenticated user");
+        throw new Error("unauthorized");
+      }
+
       const roomRef = db.doc(`rooms/${roomId}`);
 
-      await db.runTransaction(async tx => {
-        const playersCol = db.collection(`rooms/${roomId}/players`);
-        const playersSnap = await tx.get(playersCol);
-        const playerIds = playersSnap.docs.map(d => d.id);
-        if (playerIds.length < 2) throw new Error("Need at least 2 players");
+      try {
+        await db.runTransaction(async tx => {
+          console.log("🔄 Transaction started for startGame");
+          const playersCol = db.collection(`rooms/${roomId}/players`);
+          const playersSnap = await tx.get(playersCol);
+          const playerIds = playersSnap.docs.map(d => d.id);
+          console.log("👥 Players in room:", playerIds.length, playerIds);
+          
+          if (playerIds.length < 2) {
+            console.error("❌ Not enough players:", playerIds.length);
+            throw new Error("Need at least 2 players");
+          }
 
         const deck = shuffle(buildDeck());
         const hands: Record<string, Card[]> = {};
         for (const id of playerIds) hands[id] = deck.splice(0, 7);
+        console.log("🃏 Dealt cards to", playerIds.length, "players");
 
         let top = deck.pop() as Card;
         while (top.kind === "wild") { deck.unshift(top); top = deck.pop() as Card; }
+        console.log("🎴 Top card:", top);
 
         tx.set(
           roomRef,
@@ -202,19 +229,32 @@ const resolvers = {
           tx.set(handRef, { cards: hands[id] }, { merge: true });
           tx.set(playerRef, { handCount: hands[id].length }, { merge: true });
         }
+        console.log("✅ Transaction complete - Game started");
       });
 
+      console.log("✅ startGame successful");
       return true;
+    } catch (err) {
+      console.error("❌ startGame failed:", err);
+      throw err;
+    }
     },
 
     async playCard(_: unknown, { roomId, card }: { roomId: string; card: Card }, ctx: any) {
+      console.log("🃏 Mutation: playCard - Room:", roomId, "User:", ctx.user?.uid || "anonymous", "Card:", JSON.stringify(card));
+      
       const uid = ctx.user?.uid;
-      if (!uid) throw new Error("unauthorized");
+      if (!uid) {
+        console.error("❌ playCard: No authenticated user");
+        throw new Error("unauthorized");
+      }
 
       const roomRef = db.doc(`rooms/${roomId}`);
       const myHandRef = db.doc(`rooms/${roomId}/hands/${uid}`);
 
-      await db.runTransaction(async tx => {
+      try {
+        await db.runTransaction(async tx => {
+          console.log("🔄 Transaction started for playCard");
         const roomSnap = await tx.get(roomRef);
         const handSnap = await tx.get(myHandRef);
         if (!roomSnap.exists) throw new Error("Room missing");
@@ -354,25 +394,39 @@ const resolvers = {
           },
           { merge: true }
         );
+        console.log("✅ Transaction complete - Card played");
       });
 
+      console.log("✅ playCard successful");
       return true;
+    } catch (err) {
+      console.error("❌ playCard failed:", err);
+      throw err;
+    }
     },
 
     async drawOne(_: unknown, { roomId }: { roomId: string }, ctx: any) {
+      console.log("🎴 Mutation: drawOne - Room:", roomId, "User:", ctx.user?.uid || "anonymous");
+      
       const uid = ctx.user?.uid;
-      if (!uid) throw new Error("unauthorized");
-
+      if (!uid) {
+        console.error("❌ drawOne: No authenticated user");
+        throw new Error("unauthorized");
+      }
       const roomRef = db.doc(`rooms/${roomId}`);
       const myHandRef = db.doc(`rooms/${roomId}/hands/${uid}`);
 
-      await db.runTransaction(async tx => {
-        const roomSnap = await tx.get(roomRef);
-        const handSnap = await tx.get(myHandRef);
-        if (!roomSnap.exists) throw new Error("Room missing");
-        const room = roomSnap.data() as any;
-        const myHand = (handSnap.data()?.cards ?? []) as Card[];
-
+      try {
+        await db.runTransaction(async tx => {
+          console.log("🔄 Transaction started for drawOne");
+          const roomSnap = await tx.get(roomRef);
+          const handSnap = await tx.get(myHandRef);
+          if (!roomSnap.exists) {
+            console.error("❌ Room not found");
+            throw new Error("Room missing");
+          }
+          const room = roomSnap.data() as any;
+          const myHand = (handSnap.data()?.cards ?? []) as Card[];
         if (room.currentTurn !== uid) throw new Error("Not your turn");
 
         const drawPile: Card[] = [...(room.drawPile ?? [])];
@@ -428,45 +482,71 @@ const resolvers = {
             { merge: true }
           );
         }
+        console.log("✅ Transaction complete - Card drawn");
       });
 
+      console.log("✅ drawOne successful");
       return true;
+    } catch (err) {
+      console.error("❌ drawOne failed:", err);
+      throw err;
+    }
     },
 
     async endTurn(_: unknown, { roomId }: { roomId: string }, ctx: any) {
+      console.log("⏭️ Mutation: endTurn - Room:", roomId, "User:", ctx.user?.uid || "anonymous");
+      
       const uid = ctx.user?.uid;
-      if (!uid) throw new Error("unauthorized");
+      if (!uid) {
+        console.error("❌ endTurn: No authenticated user");
+        throw new Error("unauthorized");
+      }
 
       const roomRef = db.doc(`rooms/${roomId}`);
 
-      await db.runTransaction(async tx => {
-        const roomSnap = await tx.get(roomRef);
-        if (!roomSnap.exists) throw new Error("Room missing");
-        const room = roomSnap.data() as any;
+      try {
+        await db.runTransaction(async tx => {
+          console.log("🔄 Transaction started for endTurn");
+          const roomSnap = await tx.get(roomRef);
+          if (!roomSnap.exists) {
+            console.error("❌ Room not found");
+            throw new Error("Room missing");
+          }
+          const room = roomSnap.data() as any;
 
-        if (room.currentTurn !== uid) throw new Error("Not your turn");
+          if (room.currentTurn !== uid) {
+            console.error("❌ Not player's turn. Current:", room.currentTurn, "Attempted:", uid);
+            throw new Error("Not your turn");
+          }
 
-        const playersCol = db.collection(`rooms/${roomId}/players`);
-        const playersSnap = await tx.get(playersCol);
-        const ids = playersSnap.docs.map(d => d.id);
-        const dir = room.direction ?? 1;
-        const curIdx = ids.indexOf(uid);
-        const nextUid = ids[nextIndex(ids, curIdx, dir)];
+          const playersCol = db.collection(`rooms/${roomId}/players`);
+          const playersSnap = await tx.get(playersCol);
+          const ids = playersSnap.docs.map(d => d.id);
+          const dir = room.direction ?? 1;
+          const curIdx = ids.indexOf(uid);
+          const nextUid = ids[nextIndex(ids, curIdx, dir)];
+          console.log("➡️ Ending turn. Next player:", nextUid);
 
-        // FIXED: Allow endTurn even when NOT chaining (to pass after drawing)
-        tx.set(
-          roomRef,
-          {
-            currentTurn: nextUid,
-            chainValue: null,
-            chainPlayer: null,
-            updatedAt: FieldValue.serverTimestamp()
-          },
-          { merge: true }
-        );
-      });
+          // FIXED: Allow endTurn even when NOT chaining (to pass after drawing)
+          tx.set(
+            roomRef,
+            {
+              currentTurn: nextUid,
+              chainValue: null,
+              chainPlayer: null,
+              updatedAt: FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
+          console.log("✅ Transaction complete - Turn ended");
+        });
 
-      return true;
+        console.log("✅ endTurn successful");
+        return true;
+      } catch (err) {
+        console.error("❌ endTurn failed:", err);
+        throw err;
+      }
     }
   }
 };
