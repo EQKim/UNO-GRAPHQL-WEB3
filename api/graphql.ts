@@ -604,32 +604,5 @@ const yoga = createYoga({
   }
 });
 
-// Vercel serverless handler
-export default async function handler(req: any) {
-  try {
-    console.log("🚀 Handler START - Method:", req.method, "URL:", req.url);
-    
-    // Convert Vercel request to standard Request
-    const url = new URL(req.url || '/api/graphql', `https://${req.headers.host || 'localhost'}`);
-    const request = new Request(url, {
-      method: req.method,
-      headers: req.headers,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
-    });
-    
-    const response = await yoga.fetch(request);
-    console.log("✅ Handler SUCCESS - Status:", response.status);
-    return response;
-  } catch (err) {
-    console.error("💥 Handler CRASHED:", err);
-    return new Response(JSON.stringify({ error: "Internal server error", details: String(err) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-export const config = { 
-  api: { bodyParser: false },
-  runtime: 'nodejs20.x'
-};
+// Export for Vercel
+export default yoga;
