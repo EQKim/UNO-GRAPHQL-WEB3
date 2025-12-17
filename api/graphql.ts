@@ -142,11 +142,22 @@ const typeDefs = /* GraphQL */ `
     players: [Player!]!
   }
 
+  type RoomCreated {
+    roomId: ID!
+    code: String!
+  }
+
+  type RoomJoined {
+    roomId: ID!
+  }
+
   type Query {
     room(id: ID!): Room
   }
 
   type Mutation {
+    createRoom(displayName: String!): RoomCreated!
+    joinRoom(code: String!, displayName: String!): RoomJoined!
     startGame(roomId: ID!): Boolean!
     playCard(roomId: ID!, card: JSON!): Boolean!
     drawOne(roomId: ID!): Boolean!
@@ -181,6 +192,83 @@ const resolvers = {
   },
 
   Mutation: {
+    async createRoom(_: unknown, { displayName }: { displayName: string }, ctx: any) {
+      console.log("🏠 Mutation: createRoom - User:", ctx.user?.uid || "anonymous", "DisplayName:", displayName);
+      
+      if (!ctx.user) {
+        console.error("❌ createRoom: No authenticated user");
+        throw new Error("unauthorized");
+      }
+
+      const uid = ctx.user.uid;
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+      try {
+        const roomRef = await db.collection("rooms").add({
+          code,
+          hostUid: uid,
+          status: "lobby",
+          createdAt: FieldValue.serverTimestamp()
+        });
+
+        await db.doc(`rooms/${roomRef.id}/players/${uid}`).set({
+          displayName,
+          joinedAt: FieldValue.serverTimestamp(),
+          isReady: false,
+          isHost: true,
+          handCount: 0
+        });
+
+        console.log("✅ createRoom successful - Room ID:", roomRef.id, "Code:", code);
+        return { roomId: roomRef.id, code };
+      } catch (err) {
+        console.error("❌ createRoom failed:", err);
+        throw err;
+      }
+    },
+
+    async joinRoom(_: unknown, { code, displayName }: { code: string; displayName: string }, ctx: any) {
+      console.log("🚪 Mutation: joinRoom - User:", ctx.user?.uid || "anonymous", "Code:", code, "DisplayName:", displayName);
+      
+      if (!ctx.user) {
+        console.error("❌ joinRoom: No authenticated user");
+        throw new Error("unauthorized");
+      }
+
+      const uid = ctx.user.uid;
+
+      try {
+        const roomsSnap = await db.collection("rooms").where("code", "==", code).get();
+        
+        if (roomsSnap.empty) {
+          console.error("❌ Room not found with code:", code);
+          throw new Error("Room not found");
+        }
+
+        const roomId = roomsSnap.docs[0].id;
+        const roomData = roomsSnap.docs[0].data();
+
+        if (roomData.status !== "lobby") {
+          console.error("❌ Room already started or finished:", roomData.status);
+          throw new Error("Room is not in lobby");
+        }
+
+        await db.doc(`rooms/${roomId}/players/${uid}`).set({
+          displayName,
+          joinedAt: FieldValue.serverTimestamp(),
+          isReady: false,
+          isHost: false,
+          handCount: 0
+        }, { merge: true });
+
+        console.log("✅ joinRoom successful - Room ID:", roomId);
+        return { roomId };
+      } catch (err) {
+        console.error("❌ joinRoom failed:", err);
+        throw err;
+      }
+    },
+
     async startGame(_: unknown, { roomId }: { roomId: string }, ctx: any) {
       console.log("🎮 Mutation: startGame - Room:", roomId, "User:", ctx.user?.uid || "anonymous");
       
